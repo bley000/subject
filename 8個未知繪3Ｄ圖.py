@@ -1,57 +1,112 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from sympy import symbols, Eq, lambdify
+from sympy import symbols, lambdify
 
-# 定義未知數
-beta_b_hat, alpha_b_hat, alpha_a_hat, beta_a_hat, g_a, c, lambda_2, g_b = symbols('beta_b_hat alpha_b_hat alpha_a_hat beta_a_hat g_a c lambda_2 g_b')
+# 定義符號
+alpha_a_hat, beta_a_hat, g_a = symbols('alpha_a_hat beta_a_hat g_a')
+alpha_b_hat, beta_b_hat, c, lambda_2 = symbols('alpha_b_hat beta_b_hat c lambda_2')
 
-# 固定五個變數的值
-fixed_values = {
+# 定義方程式
+numerator = (1 + alpha_b_hat) * ((1 + alpha_a_hat) + (1 + beta_a_hat * (1 + alpha_a_hat)) * g_a) - \
+            c**lambda_2 * (-1 + alpha_b_hat) * ((1 + alpha_a_hat) - (1 + beta_a_hat * (1 + alpha_a_hat)) * g_a)
+denominator = (1 + beta_b_hat * (1 + alpha_b_hat)) * ((1 + alpha_a_hat) + (1 + beta_a_hat * (1 + alpha_a_hat)) * g_a) - \
+              c**lambda_2 * (1 + beta_b_hat * (1 + alpha_b_hat)) * ((1 + alpha_a_hat) - (1 + beta_a_hat * (1 + alpha_a_hat)) * g_a)
+g_b_expr = numerator / denominator
+
+# 固定參數
+fixed_params = {
+    'alpha_b_hat': 1.0,
     'beta_b_hat': 0.8,
-    'alpha_b_hat': 1,
-    'alpha_a_hat': 1,
-    'beta_a_hat': 1,
     'c': 0.5,
     'lambda_2': 0.6,
-    'g_b': 0.5
 }
 
-# 剩下三個變數作為繪圖變數
-x_var, y_var, z_var = g_a, beta_b_hat, alpha_b_hat
+# 自由變數
+free_vars = ('alpha_a_hat', 'beta_a_hat', 'g_a')
+var_ranges = {
+    'alpha_a_hat': (0, 5),
+    'beta_a_hat': (0, 5),
+    'g_a': (-10, 10),
+}
 
-# 定義方程（簡化自隱形條件.py）
-equation = (
-    (2 / (1 + beta_b_hat * (alpha_b_hat - 1))) *
-    (
-        (-1 + 1 + beta_b_hat * (alpha_b_hat - 1)) /
-        (1 + beta_b_hat * (alpha_b_hat + 1) - (1 + beta_b_hat * (alpha_b_hat - 1))) +
-        ((1 + alpha_a_hat) - (1 + beta_a_hat * (1 + alpha_a_hat)) * g_a) /
-        ((1 + beta_b_hat * (alpha_b_hat + 1)) * ((1 + alpha_a_hat) + (1 + beta_a_hat * (1 + alpha_a_hat)) * g_a) -
-         c**lambda_2 * ((1 + alpha_a_hat) - (1 + beta_a_hat * (1 + alpha_a_hat)) * g_a) * (1 + beta_b_hat * (alpha_b_hat - 1)))
-    )
-)
+# g_b 變化值
+g_b_values = [0.1, 1, 10]
+colors = ['r', 'g', 'b']
 
-# 替換固定值
-for var, value in fixed_values.items():
-    equation = equation.subs(symbols(var), value)
+# 數值化函數
+g_b_func = lambdify((alpha_a_hat, beta_a_hat, g_a,
+                     alpha_b_hat, beta_b_hat, c, lambda_2), g_b_expr, modules='numpy')
 
-# 將方程轉換為數值函數
-f = lambdify((x_var, y_var, z_var), equation, 'numpy')
+# 建立網格
+x_vals = np.linspace(*var_ranges['alpha_a_hat'], 100)
+y_vals = np.linspace(*var_ranges['beta_a_hat'], 100)
+z_range = np.linspace(*var_ranges['g_a'], 300)
+X, Y = np.meshgrid(x_vals, y_vals)
 
-# 創建 x, y 的範圍
-x = np.linspace(0.1, 1, 50)  # g_a 的範圍
-y = np.linspace(0.1, 1, 50)  # beta_b_hat 的範圍
-x, y = np.meshgrid(x, y)
-
-# 計算 z 的值
-z = f(x, y, 1)  # alpha_b_hat 固定為 1
+def compute_surface(x, y, g_b_target, z_range, g_b_func, fixed_params):
+    surface = np.zeros_like(x)
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            g_b_vals = g_b_func(
+                x[i, j], y[i, j], z_range,
+                fixed_params['alpha_b_hat'], fixed_params['beta_b_hat'],
+                fixed_params['c'], fixed_params['lambda_2']
+            )
+            idx = np.argmin(np.abs(g_b_vals - g_b_target))
+            surface[i, j] = z_range[idx]
+    return surface
 
 # 繪製 3D 圖
-fig = plt.figure()
+fig = plt.figure(figsize=(6, 4))
 ax = fig.add_subplot(111, projection='3d')
-ax.plot_surface(x, y, z, cmap='viridis', alpha=0.8)
-ax.set_xlabel('g_a')
-ax.set_ylabel('beta_b_hat')
-ax.set_zlabel('Equation Value')
-plt.title("3D Plot of the Equation")
+for g_b_val, color in zip(g_b_values, colors):
+    Z = compute_surface(X, Y, g_b_val, z_range, g_b_func, fixed_params)
+    ax.plot_surface(X, Y, Z, color=color, alpha=0.6, label=f'g_b = {g_b_val}')
+ax.set_xlabel('alpha_a_hat')
+ax.set_ylabel('beta_a_hat')
+ax.set_zlabel('g_a')
+plt.title("3D Surfaces for Different g_b Values")
+plt.legend()
+plt.show()
+
+# 繪製 x-z 圖：固定 beta_a_hat = 0
+fixed_beta = 0.0
+plt.figure(figsize=(5, 4))
+for g_b_val, color in zip(g_b_values, colors):
+    z_values = []
+    for x in x_vals:
+        g_b_vals = g_b_func(
+            x, fixed_beta, z_range,
+            fixed_params['alpha_b_hat'], fixed_params['beta_b_hat'],
+            fixed_params['c'], fixed_params['lambda_2']
+        )
+        idx = np.argmin(np.abs(g_b_vals - g_b_val))
+        z_values.append(z_range[idx])
+    plt.plot(x_vals, z_values, color=color, label=f'g_b = {g_b_val}')
+plt.xlabel('alpha_a_hat')
+plt.ylabel('g_a')
+plt.title(f'x-z Curve (beta_a_hat={fixed_beta})')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# 繪製 y-z 圖：固定 alpha_a_hat = 0
+fixed_alpha = 0.0
+plt.figure(figsize=(5, 4))
+for g_b_val, color in zip(g_b_values, colors):
+    z_values = []
+    for y in y_vals:
+        g_b_vals = g_b_func(
+            fixed_alpha, y, z_range,
+            fixed_params['alpha_b_hat'], fixed_params['beta_b_hat'],
+            fixed_params['c'], fixed_params['lambda_2']
+        )
+        idx = np.argmin(np.abs(g_b_vals - g_b_val))
+        z_values.append(z_range[idx])
+    plt.plot(y_vals, z_values, color=color, label=f'g_b = {g_b_val}')
+plt.xlabel('beta_a_hat')
+plt.ylabel('g_a')
+plt.title(f'y-z Curve (alpha_a_hat={fixed_alpha})')
+plt.legend()
+plt.grid(True)
 plt.show()
